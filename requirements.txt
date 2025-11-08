@@ -1,6 +1,13 @@
+audioplayer==0.6
+configparser==7.2.0
+gst==0.1.13
 pillow==12.0.0
 pyaes==1.6.1
 pyasn1==0.6.1
+PyAudio==0.2.14
+pycairo==1.28.0
+pydub==0.25.1
+PyGObject==3.54.5
 python-dotenv==1.2.1
 rsa==4.9.1
 Telethon==1.41.2

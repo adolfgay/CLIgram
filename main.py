@@ -3,6 +3,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from asciiGenerator import *
+from audioplayer import AudioPlayer
 
 # ---Инициализация---
 load_dotenv()
@@ -111,6 +112,8 @@ async def handler(event):
 
 # ---Выводит историю сообщений для указанного chat_id, используя offset_id для пролистывания---
 async def read_chat_history(chat_id, limit=10, is_new_chat=False):
+    voice_msgs = {}
+    voice_msgs_counter = 0
     global history_state
     if is_new_chat:
         history_state['chat_id'] = chat_id
@@ -144,10 +147,32 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
                     os.remove("ascii_art.txt")
                 except Exception as e:
                     print(f"[ОШИБКА ГЕНЕРАЦИИ ASCII] {e}")
-            
+
+            elif msg.voice:
+                # Если есть голосовое сообщение предлагаем их послушать
+                path = await msg.download_media()
+                voice_msgs_counter += 1
+                voice_msgs.update({voice_msgs_counter:path})
+
             print(f"[{msg.date.strftime('%H:%M')}] {sender_name}: {msg.text}")
 
         print("------------------------------------------------------------------")
+
+        if voice_msgs_counter != 0:
+            try:
+                print(f"Голосовые сообщения {voice_msgs}")
+                command = await client.loop.run_in_executor(None, input, "\nКакое прослушать? (0 - не слушать, 01 - все ): ")
+                answer = int(command)
+                if answer == 0:
+                    pass
+
+                elif command == '01':
+                    for audio in voice_msgs.values():
+                        await client.loop.run_in_executor(None, play_audio, audio)
+                else:
+                    await client.loop.run_in_executor(None, play_audio, voice_msgs.get(answer))
+            except Exception as e:
+                print(f"[ОШИБКА ВОСПРОИЗВЕДЕНИЯ]: {e}")
 
         history_state['offset_id'] = oldest_id 
         
@@ -155,6 +180,19 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
         print(f"[ОШИБКА ИСТОРИИ] Не удалось загрузить историю: {e}")
         history_state['in_history_mode'] = False
 
+
+def play_audio(file_path):
+    """Синхронно воспроизводит аудио и затем удаляет файл."""
+    try:
+        player = AudioPlayer(file_path)
+        player.play(block=True)
+    except Exception as e:
+        print(f"[ОШИБКА ВОСПРОИЗВЕДЕНИЯ] Не удалось воспроизвести {file_path}: {e}")
+    finally:
+        # Удаление файла после завершения проигрывания
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
 
 #---Асинхронно ждет команду пользователя, пока активен режим просмотра чата.---
 async def process_history_command(target_name, target_id):
