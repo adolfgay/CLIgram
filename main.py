@@ -16,8 +16,9 @@ history_state = {
     'in_history_mode': False 
 }
 
+
 # ---Основная функция с выводом чатов---
-async def main():  
+async def main():
     print("Ваши чаты")
     num = 1
     # Список чатов
@@ -29,11 +30,39 @@ async def main():
         num+=1
 
 
+#--- Просмотр профиля пользовтеля ---
+async def view_profile(profile_id):
+    profile = await client.get_entity(profile_id)
+
+    profile_picture = await client.download_profile_photo(profile)
+    await client.loop.run_in_executor(None, generate, profile_picture)
+    os.remove(profile_picture) # удаляем временный файл
+    os.remove("ascii_art.txt")
+
+    print(f"ID: {profile.id}")
+    print(f"Номер телефона: +{profile.phone if profile.phone != None else "скрыт"}")
+    print(f"Имя пользователя: {profile.username}")
+    print(f"Имя: {profile.first_name} {profile.last_name if profile.last_name != None else " "}")
+    print(f"Telegram Premium: {"Да" if profile.premium else "Нет"}")
+    print(f"Спамблок: {"Да" if profile.restricted else "Нет"}")
+    print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
+
+    input_task = client.loop.create_task(get_target_user())
+    return
+
+
 async def get_target_user():
 #---Основное окно с ожиданием/выбором чата---
     global input_task
     try:
-        target = await client.loop.run_in_executor(None, input, "Кому написать? (или ждем сообщения)(0 для выхода): ")
+        target = await client.loop.run_in_executor(None, input, "Кому написать(номер)? (или ждем сообщения)(0 для выхода, 01 для просмотра своего профиля): ")
+        # Вызов функций
+        if target == '0':
+            client.disconnect()
+        elif target == '01':
+            await view_profile(await client.get_me())
+            input_task = client.loop.create_task(get_target_user())
+            return
         # Получаем id и имя чата
         target_int = int(target)
         target_tuple = chats.get(target_int)
@@ -42,8 +71,6 @@ async def get_target_user():
             await read_chat_history(target_id, is_new_chat=True) # Переходим в редим просмотра чата
             input_task = client.loop.create_task(process_history_command(target_name, target_id))
             return 
-        elif target_int == 0:
-            client.disconnect()
         else:
             print('такого чата нет!')
     except ValueError:
@@ -82,12 +109,9 @@ async def handler(event):
     input_task = client.loop.create_task(get_target_user())
 
 
+# ---Выводит историю сообщений для указанного chat_id, используя offset_id для пролистывания---
 async def read_chat_history(chat_id, limit=10, is_new_chat=False):
-    """
-    Выводит историю сообщений для указанного chat_id, используя offset_id для пролистывания.
-    """
     global history_state
-    
     if is_new_chat:
         history_state['chat_id'] = chat_id
         history_state['offset_id'] = 0
@@ -136,7 +160,7 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
 async def process_history_command(target_name, target_id):
     global input_task
     
-    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать'): ")
+    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать' / 'профиль'): ")
     
     command = command.lower()
 
@@ -153,7 +177,7 @@ async def process_history_command(target_name, target_id):
         print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
         input_task = client.loop.create_task(get_target_user()) # Запускаем основной ввод
 
-    elif command == "написать":
+    elif command == 'написать':
         # Отпралвяет сообщение в выбранном чате
         message = await client.loop.run_in_executor(None, input, f"Сообщение для {target_name}: ")
         await client.send_message(target_id, message)
@@ -163,9 +187,15 @@ async def process_history_command(target_name, target_id):
         history_state['offset_id'] = 0
         print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
         input_task = client.loop.create_task(get_target_user())
+
+    elif command == 'профиль':
+        await view_profile(target_id)
+        history_state['in_history_mode'] = False
+        history_state['chat_id'] = None
+        history_state['offset_id'] = 0
        
     else:
-        print("Неизвестная команда. Введите 'еще', 'назад' или 'написать'")
+        print("Неизвестная команда. Введите 'еще', 'назад','написать' или 'профиль'")
         input_task = client.loop.create_task(process_history_command(target_name, target_id)) # Повторяем ожидание команды
  
 
