@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from asciiGenerator import *
 
-# Загружаем API ключ и создаем класс бота
+# ---Инициализация---
 load_dotenv()
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
@@ -16,27 +16,30 @@ history_state = {
     'in_history_mode': False 
 }
 
-
+# ---Основная функция с выводом чатов---
 async def main():  
     print("Ваши чаты")
     num = 1
+    # Список чатов
     global chats
     chats = {}
     async for dialog in client.iter_dialogs():
         print(f"{num}. {dialog.name}")
-        chats.update({num:(dialog.id, dialog.name)})
+        chats.update({num:(dialog.id, dialog.name)}) # Номер для выбора, id и имя чата
         num+=1
 
 
 async def get_target_user():
+#---Основное окно с ожиданием/выбором чата---
     global input_task
     try:
         target = await client.loop.run_in_executor(None, input, "Кому написать? (или ждем сообщения)(0 для выхода): ")
+        # Получаем id и имя чата
         target_int = int(target)
         target_tuple = chats.get(target_int)
         if target_tuple:
             target_id, target_name = target_tuple
-            await read_chat_history(target_id, is_new_chat=True)
+            await read_chat_history(target_id, is_new_chat=True) # Переходим в редим просмотра чата
             input_task = client.loop.create_task(process_history_command(target_name, target_id))
             return 
         elif target_int == 0:
@@ -53,6 +56,7 @@ async def get_target_user():
         input_task = client.loop.create_task(get_target_user())
 
 
+#---Обработчик новых сообщений---
 @client.on(events.NewMessage())
 async def handler(event):
     global input_task
@@ -66,12 +70,13 @@ async def handler(event):
         print("--------------------------")
         answer = await client.loop.run_in_executor(None, input, "Ответить Y/N? Д/Н? ")
         if answer.lower() in ('y', 'д'):
+            # Отвечаем на сообщение
             answer_to_target = await client.loop.run_in_executor(None, input, 'Ваш ответ: ')
             await event.reply(answer_to_target)
         else:
             pass
     else:
-        print(f"\n[ИГНОР] Получен новый пост от канала ID: {event.chat_id}. Нельзя ответить.")
+        print(f"\n[ИГНОР] Получен новый пост от канала ID: {event.chat_id}.") # не отвечаем на каналы
         input_task = client.loop.create_task(get_target_user())
         return 
     input_task = client.loop.create_task(get_target_user())
@@ -107,10 +112,11 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
             if msg.out:
                 sender_name = "Вы"
             if msg.photo:
+                # Если в чате есть фото выводим его в ASCII 
                 try:
                     path = await msg.download_media()
                     await client.loop.run_in_executor(None, generate, path)
-                    os.remove(path)
+                    os.remove(path) # удаляем временный файл
                     os.remove("ascii_art.txt")
                 except Exception as e:
                     print(f"[ОШИБКА ГЕНЕРАЦИИ ASCII] {e}")
@@ -126,10 +132,8 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
         history_state['in_history_mode'] = False
 
 
+#---Асинхронно ждет команду пользователя, пока активен режим просмотра чата.---
 async def process_history_command(target_name, target_id):
-    """
-    Асинхронно ждет команду пользователя, пока активен режим истории.
-    """
     global input_task
     
     command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать'): ")
@@ -142,7 +146,7 @@ async def process_history_command(target_name, target_id):
         input_task = client.loop.create_task(process_history_command(target_name, target_id)) # Ждем следующую команду
         
     elif command in ('назад', 'назад'):
-        # Если "назад", выходим из режима истории и возвращаемся к основному вводу
+        # Если "назад", выходим из режима просмотра чата и возвращаемся к основному вводу
         history_state['in_history_mode'] = False
         history_state['chat_id'] = None
         history_state['offset_id'] = 0
@@ -150,6 +154,7 @@ async def process_history_command(target_name, target_id):
         input_task = client.loop.create_task(get_target_user()) # Запускаем основной ввод
 
     elif command == "написать":
+        # Отпралвяет сообщение в выбранном чате
         message = await client.loop.run_in_executor(None, input, f"Сообщение для {target_name}: ")
         await client.send_message(target_id, message)
         print(f"\n[УСПЕХ] Сообщение отправлено.")
