@@ -1,4 +1,5 @@
 from telethon import TelegramClient, events
+from telethon.tl.types import Channel
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -7,7 +8,7 @@ from audioplayer import AudioPlayer
 import pyaudio
 import wave
 from pydub import AudioSegment
-
+# TODO: Расшифровка гс через vosk
 
 # ---Инициализация---
 load_dotenv()
@@ -116,10 +117,8 @@ async def handler(event):
             # Отвечаем на сообщение
             answer_to_target = await client.loop.run_in_executor(None, input, 'Ваш ответ: ')
             await event.reply(answer_to_target)
-        else:
-            pass
     else:
-        print(f"\n[ИГНОР] Получен новый пост от канала ID: {event.chat_id}.") # не отвечаем на каналы
+        print(f"\n[ИГНОР] Получен новый пост от канала {sender.title}: {event.text}") # не отвечаем на каналы
         input_task = client.loop.create_task(get_target_user())
         return 
     input_task = client.loop.create_task(get_target_user())
@@ -136,7 +135,6 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
         history_state['in_history_mode'] = True
 
     try:
-
         messages = await client.get_messages(
             history_state['chat_id'], 
             limit=limit, 
@@ -150,7 +148,11 @@ async def read_chat_history(chat_id, limit=10, is_new_chat=False):
         oldest_id = messages[-1].id 
         for msg in reversed(messages):
             sender = await msg.get_sender()
-            sender_name = sender.first_name if sender.first_name else f"ID: {sender.id}"
+            if isinstance(sender, Channel):
+                # Если канал
+                sender_name = sender.title
+            else:
+                sender_name = sender.first_name if sender.first_name else f"ID: {sender.id}"
             if msg.out:
                 sender_name = "Вы"
             if msg.photo:
@@ -214,7 +216,7 @@ def play_audio(file_path):
 async def process_history_command(target_name, target_id):
     global input_task
     
-    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать' / 'отправить гс' / 'профиль'): ")
+    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать' / 'отправить гс' / 'отправить файл' / 'профиль'): ")
     
     command = command.lower()
 
@@ -258,6 +260,19 @@ async def process_history_command(target_name, target_id):
         except Exception as e:
             print(f"[ОШИБКА ОТПРАВКИ ГС] {e}")
 
+    elif command == 'отправить файл':
+        try:
+            file_path = await client.loop.run_in_executor(None, input, "Введите путь до файла:")
+            await client.send_file(target_id, file_path)
+            print(f"\n[УСПЕХ] Файл отправлен.")
+            history_state['in_history_mode'] = False
+            history_state['chat_id'] = None
+            history_state['offset_id'] = 0
+            print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
+            input_task = client.loop.create_task(get_target_user())
+        except Exception as e:
+            print(f"[ОШИБКА ОТПРАВКИ ФАЙЛА] {e}")
+
     elif command == 'профиль':
         await view_profile(target_id)
         history_state['in_history_mode'] = False
@@ -273,11 +288,11 @@ def record_audio(duration_seconds):
     try:
         # 1. Инициализация
         p = pyaudio.PyAudio()
-        stream = p.open(format=pyaudio.paInt16,
-                        channels=1,
-                        rate=44100,
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
                         input=True,
-                        frames_per_buffer=1024)
+                        frames_per_buffer=CHUNK)
         output_filename = 'voicemsg.wav'
 
         print("\n[ЗАПИСЬ] Говорите! (Продолжительность: {} сек)".format(duration_seconds))

@@ -33,6 +33,19 @@ CLIGRAM — консольный клиент для Telegram, построен�
     pip install -r requirements.txt
     ```
 
+4. **Установите FFmpeg:**
+    ```bash
+    sudo apt install FFmpeg # Для Debian/Ubuntu(-based)
+    ```
+
+    ```bash
+    sudo pacman -S FFmpeg # Для Arch(-based)
+    ```
+
+    ```bash
+    sudo dnf install FFmpeg # Для Fedora/RHEL/CentOS
+    ```
+
 ## 🔑 Настройка (.env файл)
 
 Для работы клиента необходимо получить `api_id` и `api_hash` на [сайте Telegram API](https://my.telegram.org/).
