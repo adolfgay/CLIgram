@@ -4,6 +4,10 @@ import os
 from dotenv import load_dotenv
 from asciiGenerator import *
 from audioplayer import AudioPlayer
+import pyaudio
+import wave
+from pydub import AudioSegment
+
 
 # ---Инициализация---
 load_dotenv()
@@ -11,6 +15,10 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 client = TelegramClient('bot', API_ID , API_HASH)
 input_task = None
+CHUNK = 1024
+FORMAT = pyaudio.paInt16 
+CHANNELS = 1              # Моно
+RATE = 44100
 history_state = {
     'chat_id': None,        
     'offset_id': 0,         
@@ -59,7 +67,14 @@ async def get_target_user():
         target = await client.loop.run_in_executor(None, input, "Кому написать(номер)? (или ждем сообщения)(0 для выхода, 01 для просмотра своего профиля): ")
         # Вызов функций
         if target == '0':
-            client.disconnect()
+            try:
+                client.disconnect()
+                for f in os.listdir(os.getcwd()):
+                    if f.startswith('voice'):
+                        os.remove(f)
+            except Exception as e:
+                print(f"[ОШИБКА ОТКЛЮЧЕНИЯ/УДАЛЕНИЯ] {e}")
+                
         elif target == '01':
             await view_profile(await client.get_me())
             input_task = client.loop.create_task(get_target_user())
@@ -186,6 +201,7 @@ def play_audio(file_path):
     try:
         player = AudioPlayer(file_path)
         player.play(block=True)
+        
     except Exception as e:
         print(f"[ОШИБКА ВОСПРОИЗВЕДЕНИЯ] Не удалось воспроизвести {file_path}: {e}")
     finally:
@@ -198,7 +214,7 @@ def play_audio(file_path):
 async def process_history_command(target_name, target_id):
     global input_task
     
-    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать' / 'профиль'): ")
+    command = await client.loop.run_in_executor(None, input, "\nВведите команду: ('еще' / 'назад' / 'написать' / 'отправить гс' / 'профиль'): ")
     
     command = command.lower()
 
@@ -226,6 +242,22 @@ async def process_history_command(target_name, target_id):
         print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
         input_task = client.loop.create_task(get_target_user())
 
+    elif command == 'отправить гс':
+        try:
+            duration = await client.loop.run_in_executor(None, input, "Введите длину ГС: ")
+            voice_msg_path = await client.loop.run_in_executor(None, record_audio, int(duration))
+            await client.send_file(target_id, voice_msg_path, voice_note=True)
+            print(f"\n[УСПЕХ] Сообщение отправлено.")
+            if os.path.exists(voice_msg_path):
+                os.remove(voice_msg_path)
+            history_state['in_history_mode'] = False
+            history_state['chat_id'] = None
+            history_state['offset_id'] = 0
+            print("\n--- Возврат в режим ожидания ввода номера чата/сообщения ---")
+            input_task = client.loop.create_task(get_target_user())
+        except Exception as e:
+            print(f"[ОШИБКА ОТПРАВКИ ГС] {e}")
+
     elif command == 'профиль':
         await view_profile(target_id)
         history_state['in_history_mode'] = False
@@ -233,9 +265,58 @@ async def process_history_command(target_name, target_id):
         history_state['offset_id'] = 0
        
     else:
-        print("Неизвестная команда. Введите 'еще', 'назад','написать' или 'профиль'")
+        print("Неизвестная команда. Введите 'еще', 'назад','написать', 'отправить гс' или 'профиль'")
         input_task = client.loop.create_task(process_history_command(target_name, target_id)) # Повторяем ожидание команды
  
+
+def record_audio(duration_seconds):
+    try:
+        # 1. Инициализация
+        p = pyaudio.PyAudio()
+        stream = p.open(format=pyaudio.paInt16,
+                        channels=1,
+                        rate=44100,
+                        input=True,
+                        frames_per_buffer=1024)
+        output_filename = 'voicemsg.wav'
+
+        print("\n[ЗАПИСЬ] Говорите! (Продолжительность: {} сек)".format(duration_seconds))
+        frames = []
+
+        # 2. Запись данных
+        for i in range(0, int(RATE / CHUNK * duration_seconds)):
+            data = stream.read(CHUNK)
+            frames.append(data)
+
+        print("[ЗАПИСЬ] Запись завершена.")
+
+        # 3. Остановка и очистка
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+        # 4. Сохранение в WAV
+        wf = wave.open(output_filename, 'wb')
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(p.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+    except Exception as e:
+        print(f"[ОШИБКА ЗАПИСИ] {e}")
+    # 5. КОНВЕРТАЦИЯ В .OGA 
+    # (FFmpeg необходимо установить отдельно в ОС)
+    try:
+        ogg_filename = output_filename.replace('.wav', '.oga')
+        audio = AudioSegment.from_wav(output_filename)
+        audio.export(ogg_filename, format="ogg")
+        os.remove(output_filename) # Удаляем временный WAV
+        print(f"[КОНВЕРТАЦИЯ] Файл готов: {ogg_filename}")
+        return ogg_filename
+    except Exception as e:
+        print(f"[ОШИБКА КОНВЕРТАЦИИ] {e}. ")
+        return output_filename
+
 
 # --- Запуск клиента ---
 if __name__ == "__main__":

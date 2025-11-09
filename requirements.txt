@@ -1,3 +1,4 @@
+audioop-lts==0.2.2
 audioplayer==0.6
 configparser==7.2.0
 gst==0.1.13
